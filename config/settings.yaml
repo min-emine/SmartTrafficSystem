@@ -1,0 +1,16 @@
+# config/settings.yaml
+
+system:
+  video_url: "https://content.tvkur.com/l/c77i6m384cnrb6mlji4g/master.m3u8"
+  model_path: "yolo11n.pt"
+  resolution: [1280, 720]
+
+ai:
+  learning_frames: 150      # Yolları öğrenmek için beklenecek kare sayısı
+  cluster_count: 4          # Beklenen yol/şerit sayısı
+
+weights:                    # Araç Öncelik Puanları
+  2: 1.0  # Car
+  3: 1.5  # Motorcycle
+  5: 4.0  # Bus (Öncelikli)
+  7: 1.5  # Truck
