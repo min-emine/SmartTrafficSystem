@@ -18,6 +18,10 @@ Sistem, **Manuel (Çizim)** ve **Otonom (AI)** olmak üzere iki farklı modda ç
 * **Otomatik Yol Haritalama:** `Scikit-Learn K-Means Clustering` algoritması ile araçların hareket rotalarını izler ve şeritleri kendi kendine öğrenir.
 * **Öncelik Tabanlı Karar:** Sadece araç sayısına bakmaz; araç tipine göre (Ambulans > Otobüs > Otomobil) ağırlıklı puanlama yapar.
 * **Dinamik Işık Yönetimi:** En yüksek öncelik puanına sahip yola otomatik olarak geçiş hakkı (Yeşil Işık) verir.
+<div align="center">
+  <img src="ai ögreniyo (online-video-cutter.com)_2.gif" width="48%" alt="Otonom Sürüş 1" />
+  <img src="06-18 (online-video-cutter.com).gif" width="48%" alt="Otonom Sürüş 2" />
+</div>
 
 ### ✍️ 2. Manuel Mod (Legacy)
 * **Bölge Çizim Aracı:** `zone_creator.py` aracı ile kullanıcı videoda istediği bölgeleri (ROI) mouse ile çizer.
