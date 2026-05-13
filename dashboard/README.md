@@ -13,4 +13,6 @@ npm run typecheck
 
 `npm run build` exports the static dashboard to `out/`.
 
-The dashboard currently uses local demo data and project GIF assets. It is structured so a future API can replace the data module without reshaping the UI.
+The dashboard now reads `public/traffic-state.json` when it exists. The Python runtime writes that file on each frame, so the UI mirrors the live detector state without needing a separate backend.
+
+If the file is unavailable, the dashboard falls back to the bundled demo data and GIF assets.
