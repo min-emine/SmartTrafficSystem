@@ -1,0 +1,23 @@
+{
+  "mode": "autonomous",
+  "status": "active",
+  "progress": 100.0,
+  "learningFrames": 150,
+  "clusterCount": 4,
+  "vehicleCount": 0,
+  "bestLane": -1,
+  "scores": [
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "laneSignals": [
+    "red",
+    "red",
+    "red",
+    "red"
+  ],
+  "source": "python-runtime",
+  "updatedAt": "2026-05-12T21:31:31.344234+00:00"
+}

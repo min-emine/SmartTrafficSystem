@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties, ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -33,10 +33,38 @@ import {
   type SignalState
 } from "../data/traffic";
 
+type LiveTrafficState = {
+  mode?: "autonomous" | "manual";
+  status?: string;
+  progress?: number;
+  learningFrames?: number;
+  clusterCount?: number;
+  vehicleCount?: number;
+  bestLane?: number;
+  scores?: number[];
+  laneSignals?: SignalState[];
+  lanes?: Lane[];
+  zones?: Array<{
+    id?: number;
+    name: string;
+    label?: string;
+    count: number;
+    center?: [number, number];
+  }>;
+  events?: Array<{
+    time: string;
+    title: string;
+    detail: string;
+  }>;
+  videoUrl?: string;
+  source?: string;
+  updatedAt?: string;
+};
+
 const feedTabs = [
-  { id: "live", label: "Live", asset: "/traffic-live.gif" },
-  { id: "learning", label: "Learning", asset: "/traffic-learning.gif" },
-  { id: "zones", label: "Zones", asset: "/traffic-live.gif" }
+  { id: "live", label: "Live" },
+  { id: "learning", label: "Learning" },
+  { id: "zones", label: "Zones" }
 ] as const;
 
 const navItems = [
@@ -52,6 +80,31 @@ const signalTone: Record<SignalState, string> = {
   amber: "signal-amber",
   red: "signal-red"
 };
+
+interface VideoPlayerProps {
+  url?: string;
+}
+
+function VideoPlayer({ url = "/kayit.mp4" }: VideoPlayerProps) {
+  return (
+    <video
+      key={url}
+      src={url}
+      autoPlay
+      muted
+      controls
+      playsInline
+      loop
+      preload="metadata"
+      style={{
+        width: "100%",
+        height: "100%",
+        objectFit: "cover",
+        backgroundColor: "#000"
+      }}
+    />
+  );
+}
 
 function MetricCard({
   icon,
@@ -113,42 +166,125 @@ export function TrafficDashboard() {
   const [greenSeconds, setGreenSeconds] = useState(42);
   const [learningFrames, setLearningFrames] = useState(systemConfig.learningFrames);
   const [emergencyPriority, setEmergencyPriority] = useState(true);
+  const [liveState, setLiveState] = useState<LiveTrafficState | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadLiveState = async () => {
+      try {
+        const response = await fetch("/traffic-state.json", { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error("traffic state unavailable");
+        }
+
+        const snapshot = (await response.json()) as LiveTrafficState;
+        if (active) {
+          setLiveState(snapshot);
+          if (snapshot.mode) {
+            setMode(snapshot.mode);
+          }
+          if (snapshot.progress != null && snapshot.learningFrames) {
+            setLearningFrames(snapshot.learningFrames);
+          }
+        }
+      } catch {
+        if (active) {
+          setLiveState(null);
+        }
+      }
+    };
+
+    void loadLiveState();
+    const timer = window.setInterval(() => {
+      void loadLiveState();
+    }, 2000);
+
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  const displayMode = liveState?.mode ?? mode;
+  const displayRunning = liveState ? liveState.status !== "paused" : isRunning;
 
   const activeLanes = useMemo<Lane[]>(() => {
-    if (!isRunning) {
+    const liveLaneRows = liveState?.lanes;
+    if (liveLaneRows?.length) {
+      return liveLaneRows;
+    }
+
+    if (!displayRunning) {
       return lanes.map((lane) => ({ ...lane, signal: "red" }));
     }
 
-    if (mode === "manual") {
+    if (displayMode === "manual") {
+      const zoneSnapshot = liveState?.zones ?? [];
+
       return lanes.map((lane) => {
+        const zone = zoneSnapshot[lane.id];
         let signal: SignalState = "red";
         if (lane.id === manualLane) signal = "green";
         if (lane.id === (manualLane + 1) % lanes.length) signal = "amber";
-        return { ...lane, signal };
+        return {
+          ...lane,
+          name: zone?.name ?? lane.name,
+          signal,
+          vehicles: zone?.count ?? lane.vehicles,
+          priorityScore: zone?.count ?? lane.priorityScore
+        };
+      });
+    }
+
+    if (liveState?.scores?.length) {
+      return lanes.map((lane, index) => {
+        const score = liveState.scores?.[index] ?? lane.priorityScore;
+        const signal = liveState.laneSignals?.[index] ?? lane.signal;
+
+        return {
+          ...lane,
+          signal,
+          vehicles: Math.max(lane.vehicles, Math.round(score)),
+          priorityScore: score
+        };
       });
     }
 
     return lanes;
-  }, [isRunning, manualLane, mode]);
+  }, [displayMode, displayRunning, liveState, manualLane]);
 
   const selectedTab = feedTabs.find((tab) => tab.id === selectedFeed) ?? feedTabs[0];
-  const totalVehicles = activeLanes.reduce((sum, lane) => sum + lane.vehicles, 0);
-  const bestLane = activeLanes.reduce((best, lane) => {
-    return lane.priorityScore > best.priorityScore ? lane : best;
-  }, activeLanes[0]);
+  const totalVehicles = liveState?.vehicleCount ?? activeLanes.reduce((sum, lane) => sum + lane.vehicles, 0);
+  const bestLane =
+    liveState?.bestLane != null && activeLanes[liveState.bestLane]
+      ? activeLanes[liveState.bestLane]
+      : activeLanes.reduce((best, lane) => {
+          return lane.priorityScore > best.priorityScore ? lane : best;
+        }, activeLanes[0]);
   const maxScore = Math.max(...activeLanes.map((lane) => lane.priorityScore), 1);
-  const learningProgress = Math.min(Math.round((112 / learningFrames) * 100), 100);
-  const zoneLabels = manualZones.map((zone) => {
-    const totals = zone.points.reduce(
-      (acc, [x, y]) => ({ x: acc.x + x, y: acc.y + y }),
-      { x: 0, y: 0 }
-    );
-    return {
-      ...zone,
-      x: totals.x / zone.points.length,
-      y: totals.y / zone.points.length
-    };
-  });
+  const learningProgress =
+    liveState?.progress ?? Math.min(Math.round((112 / learningFrames) * 100), 100);
+  const liveZones = liveState?.zones ?? [];
+  const zoneLabels = liveZones.length
+    ? liveZones.map((zone) => ({
+        ...zone,
+        x: zone.center?.[0] ?? 0,
+        y: zone.center?.[1] ?? 0,
+      }))
+    : manualZones.map((zone) => {
+        const totals = zone.points.reduce(
+          (acc, [x, y]) => ({ x: acc.x + x, y: acc.y + y }),
+          { x: 0, y: 0 }
+        );
+        return {
+          ...zone,
+          x: totals.x / zone.points.length,
+          y: totals.y / zone.points.length
+        };
+      });
+
+  const timelineEvents = liveState?.events ?? activityLog;
 
   return (
     <main className="app-shell">
@@ -184,7 +320,7 @@ export function TrafficDashboard() {
           <div className="topbar-actions">
             <div className="system-pill">
               <span className="pulse-dot" />
-              {isRunning ? "Active" : "Paused"}
+              {liveState ? `Live · ${liveState.status ?? "sync"}` : displayRunning ? "Active" : "Paused"}
             </div>
             <IconButton label="Refresh stream">
               <RefreshCw size={18} />
@@ -202,7 +338,7 @@ export function TrafficDashboard() {
           <MetricCard
             icon={<ShieldCheck size={18} />}
             label="AI State"
-            value={mode === "autonomous" ? "Autonomous" : "Manual"}
+            value={displayMode === "autonomous" ? "Autonomous" : "Manual"}
             detail={`${systemConfig.clusterCount} learned routes`}
             tone="good"
           />
@@ -251,7 +387,7 @@ export function TrafficDashboard() {
             </div>
 
             <div className="video-frame">
-              <img src={selectedTab.asset} alt={`${selectedTab.label} traffic camera feed`} />
+              <VideoPlayer url={liveState?.videoUrl ?? "/kayit.mp4"} />
               <div className="feed-badge">
                 <Camera size={16} />
                 1280p
@@ -264,7 +400,24 @@ export function TrafficDashboard() {
                   />
                 ))}
               </div>
-              {selectedFeed === "zones" && (
+              {selectedFeed === "zones" && liveZones.length > 0 && (
+                <svg className="zone-overlay" viewBox="0 0 1280 720" aria-hidden="true">
+                  {liveZones.map((zone, index) => (
+                    <g key={zone.name}>
+                      <circle
+                        className={`zone-polygon zone-${index}`}
+                        cx={zone.center?.[0] ?? 0}
+                        cy={zone.center?.[1] ?? 0}
+                        r="32"
+                      />
+                      <text x={(zone.center?.[0] ?? 0) + 40} y={(zone.center?.[1] ?? 0) - 16}>
+                        {zone.label ?? zone.name}
+                      </text>
+                    </g>
+                  ))}
+                </svg>
+              )}
+              {selectedFeed === "zones" && !liveZones.length && (
                 <svg className="zone-overlay" viewBox="0 0 1280 720" aria-hidden="true">
                   {manualZones.map((zone, index) => (
                     <polygon
@@ -319,7 +472,7 @@ export function TrafficDashboard() {
                 disabled={mode !== "manual"}
                 onChange={(event) => setManualLane(Number(event.target.value))}
               >
-                {lanes.map((lane) => (
+                {activeLanes.map((lane) => (
                   <option value={lane.id} key={lane.id}>
                     {lane.name}
                   </option>
@@ -439,16 +592,30 @@ export function TrafficDashboard() {
               <path d="M0 456 C260 360 482 316 686 300 C885 284 1032 304 1280 392" />
               <path d="M708 0 C670 170 641 320 590 720" />
               <path d="M956 0 C962 226 1026 418 1168 720" />
-              {manualZones.map((zone, index) => (
-                <polygon
-                  className={`zone-polygon zone-${index}`}
-                  key={zone.name}
-                  points={zone.points.map(([x, y]) => `${x},${y}`).join(" ")}
-                />
-              ))}
+              {liveZones.length > 0
+                ? liveZones.map((zone, index) => (
+                    <g key={zone.name}>
+                      <circle
+                        className={`zone-polygon zone-${index}`}
+                        cx={zone.center?.[0] ?? 0}
+                        cy={zone.center?.[1] ?? 0}
+                        r="34"
+                      />
+                      <text x={(zone.center?.[0] ?? 0) + 44} y={(zone.center?.[1] ?? 0) + 4}>
+                        {zone.label ?? zone.name}
+                      </text>
+                    </g>
+                  ))
+                : manualZones.map((zone, index) => (
+                    <polygon
+                      className={`zone-polygon zone-${index}`}
+                      key={zone.name}
+                      points={zone.points.map(([x, y]) => `${x},${y}`).join(" ")}
+                    />
+                  ))}
               {zoneLabels.map((zone) => (
                 <text x={zone.x} y={zone.y} key={zone.name}>
-                  {zone.label}
+                  {zone.label ?? zone.name}
                 </text>
               ))}
             </svg>
@@ -467,7 +634,7 @@ export function TrafficDashboard() {
             </div>
 
             <div className="event-list">
-              {activityLog.map((event) => (
+              {timelineEvents.map((event) => (
                 <article className="event-item" key={`${event.time}-${event.title}`}>
                   <time>{event.time}</time>
                   <div>
